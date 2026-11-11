@@ -1,0 +1,42 @@
+stateDiagram-v2
+    direction TB
+
+    state "Não autenticada" as NaoAutenticada
+    state "Autenticando" as Autenticando
+    state "Bloqueada" as Bloqueada
+    state "Encerrada" as Encerrada
+    state apurar <<choice>>
+    state "Autenticada" as Autenticada {
+        [*] --> Valida
+        state "Válida" as Valida
+        state "Expirando" as Expirando
+        Valida --> Expirando : tokenProximoDoFim [JANELA >= restante] / sinalizarRenovacao()
+        Expirando --> Valida : verificarPermissao(SessaoDTO) [tokenValido == true] / renovarSessao()
+    }
+
+    [*] --> NaoAutenticada
+    NaoAutenticada --> Autenticando : autenticar(CredenciaisDTO) [contaBloqueada == false]
+    Autenticando --> Autenticada : respostaLogin [credenciaisValidas == true] / carregarPerfil(), zerarFalhas(), registrarAuditoria(), emitirSessao()
+    Autenticando --> apurar : respostaLogin [credenciaisValidas == false] / registrarFalha()
+    apurar --> Bloqueada : [falhas >= LIMITE] / bloquearConta()
+    apurar --> NaoAutenticada : [LIMITE > falhas]
+    Bloqueada --> NaoAutenticada : bloqueioExpirou [agora >= fimDoBloqueio]
+    Autenticada --> Encerrada : encerrarSessao()
+    Autenticada --> Encerrada : tokenExpirado [agora >= expiraEm]
+    Autenticada --> Encerrada : verificarPermissao(SessaoDTO) [tokenRevogado == true]
+    Encerrada --> [*]
+
+    NaoAutenticada : entry / limparContextoDeSessao()
+    NaoAutenticada : autenticar(CredenciaisDTO) [contaBloqueada == true] / negarAcesso()
+
+    Autenticando : entry / iniciarTemporizadorLogin()
+    Autenticando : do / validarCredenciais(CredenciaisDTO)
+
+    Bloqueada : entry / notificar(EventoSegurancaDTO)
+    Bloqueada : autenticar(CredenciaisDTO) / negarAcesso()
+    Bloqueada : exit / zerarFalhas(login)
+
+    Valida : entry / iniciarJanelaDeExpiracao()
+    Expirando : do / aguardarRenovacao()
+
+    Encerrada : entry / revogarSessao(jti)
