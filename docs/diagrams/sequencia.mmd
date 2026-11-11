@@ -1,0 +1,76 @@
+sequenceDiagram
+autonumber
+actor U as Usuário
+participant W as PortalWeb
+participant A as ControleAcessoService
+participant L as SistemaLogin
+participant R as RepositorioAcesso
+participant N as NotificacaoService
+
+Note over U,N: Fase 1 - Autenticação (RF24)
+U->>W: submeterCredenciais(login, senha)
+W->>A: autenticar(CredenciaisDTO)
+A->>R: consultarBloqueio(login)
+R-->>A: BloqueioDTO
+
+alt Conta bloqueada (BloqueioDTO.bloqueada == true)
+    A-->>W: ErroAcessoDTO(ACESSO_BLOQUEADO)
+    W-->>U: exibirErro(ErroAcessoDTO)
+else Conta ativa
+    A->>L: validarCredenciais(CredenciaisDTO)
+    alt Credenciais válidas
+        L-->>A: IdentidadeDTO
+        A->>R: carregarPerfil(usuarioId)
+        R-->>A: PerfilDTO
+        A->>R: zerarFalhas(login)
+        A-)R: registrarAuditoria(EventoAuditoriaDTO)
+        A-->>W: SessaoDTO
+        W-->>U: exibirPainel(SessaoDTO)
+    else Credenciais inválidas
+        L-->>A: ErroAcessoDTO(CREDENCIAIS_INVALIDAS)
+        A->>R: registrarFalha(login)
+        R-->>A: FalhasDTO
+        alt Limite atingido (FalhasDTO.total >= LIMITE)
+            A->>R: bloquearConta(login)
+            A-)N: notificar(destinatario, EventoSegurancaDTO)
+            A-->>W: ErroAcessoDTO(ACESSO_BLOQUEADO)
+        else Tentativas restantes
+            A-->>W: ErroAcessoDTO(CREDENCIAIS_INVALIDAS)
+        end
+        W-->>U: exibirErro(ErroAcessoDTO)
+    end
+end
+
+Note over U,N: Fase 2 - Autorização por perfil (RF24)
+loop Enquanto a sessão estiver ativa
+    U->>W: acessarFuncionalidade(funcionalidade)
+    W->>A: verificarPermissao(SessaoDTO, funcionalidade)
+    A->>R: sessaoRevogada(jti)
+    R-->>A: boolean
+    alt Token expirado ou revogado
+        A-->>W: ErroAcessoDTO(SESSAO_EXPIRADA)
+        W-->>U: redirecionarParaLogin()
+    else Token válido
+        A->>R: consultarPermissao(perfilId, funcionalidade)
+        R-->>A: PermissaoDTO
+        alt Perfil autorizado (PermissaoDTO.permitido == true)
+            opt Token próximo da expiração
+                A->>A: renovarSessao(SessaoDTO)
+                A-->>A: SessaoDTO
+            end
+            A-->>W: DecisaoAcessoDTO(permitido)
+            W-->>U: liberarFuncionalidade()
+        else Perfil não autorizado
+            A-)R: registrarAuditoria(EventoAuditoriaDTO)
+            A-->>W: DecisaoAcessoDTO(negado, motivo)
+            W-->>U: exibirAcessoNegado()
+        end
+    end
+end
+
+Note over U,N: Fase 3 - Encerramento da sessão
+U->>W: encerrarSessao()
+W->>A: encerrarSessao(SessaoDTO)
+A->>R: revogarSessao(jti)
+A-->>W: confirmação (void)
+W-->>U: redirecionarParaLogin()
