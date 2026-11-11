@@ -1,0 +1,88 @@
+flowchart TD
+    subgraph USR["Raia 1 - Usuário (Ator)"]
+        A(["Início"])
+        B["Informar credenciais"]
+        U1["Exibir erro de acesso bloqueado"]
+        U1b["Exibir erro e tentativas restantes"]
+        U2["Solicitar funcionalidade"]
+        U3["Utilizar funcionalidade liberada"]
+        D7{"Continuar usando o sistema?"}
+        U6["Encerrar sessão"]
+        U4["Exibir acesso negado"]
+        U5["Redirecionar para login"]
+        FIM1(((Fim)))
+        FIM3(((Fim)))
+        FIM4(((Fim)))
+    end
+
+    subgraph ACES["Raia 2 - Controle de Acesso (Back-end)"]
+        C1["Receber autenticar(CredenciaisDTO)"]
+        D1{"Conta bloqueada? (consultarBloqueio)"}
+        C2["Negar acesso: ACESSO_BLOQUEADO"]
+        C2b["Retornar ACESSO_BLOQUEADO"]
+        C3["Delegar ao Sistema de Login (validarCredenciais)"]
+        D2{"Credenciais válidas?"}
+        C4["Registrar falha (registrarFalha)"]
+        D3{"Limite de falhas atingido?"}
+        C5["Bloquear conta (bloquearConta)"]
+        C6["Retornar CREDENCIAIS_INVALIDAS"]
+        F1@{ shape: fork, label: "Fork" }
+        C7["Carregar perfil (carregarPerfil)"]
+        C8["Registrar auditoria de login (registrarAuditoria)"]
+        C9["Zerar falhas (zerarFalhas)"]
+        J1@{ shape: fork, label: "Join" }
+        C10["Emitir SessaoDTO (JWT RS256, 15 min)"]
+        C11["Receber verificarPermissao(SessaoDTO, funcionalidade)"]
+        D4{"Token expirado ou revogado? (sessaoRevogada)"}
+        D5{"Perfil autorizado? (consultarPermissao)"}
+        D6{"Token próximo da expiração?"}
+        C16["Renovar sessão (renovarSessao)"]
+        C12["Retornar DecisaoAcessoDTO permitido"]
+        C13["Registrar auditoria de acesso negado (registrarAuditoria)"]
+        C14["Retornar DecisaoAcessoDTO negado"]
+        C15["Retornar SESSAO_EXPIRADA"]
+        C17["Receber encerrarSessao(SessaoDTO) e revogar (revogarSessao)"]
+        F2@{ shape: fork, label: "Fork" }
+        J2@{ shape: fork, label: "Join" }
+    end
+
+    subgraph EXT["Raia 3 - Sistema de Login (Serviço Externo)"]
+        L1["Verificar credenciais"]
+    end
+
+    subgraph NOT["Raia 4 - Serviço de Notificação (Serviço Externo)"]
+        N1["Enviar alerta de bloqueio (notificar, assíncrono)"]
+    end
+
+    %% Autenticação
+    A --> B --> C1 --> D1
+    D1 -- "[contaBloqueada == true]" --> C2 --> U1
+    D1 -- "[contaBloqueada == false]" --> C3
+    C3 --> L1 --> D2
+    D2 -- "[credenciaisValidas == false]" --> C4 --> D3
+    D3 -- "[falhas >= LIMITE]" --> C5 --> F2
+    F2 --> N1 --> J2
+    F2 --> C2b --> J2
+    J2 --> U1
+    U1 --> FIM1
+    D3 -- "[LIMITE > falhas]" --> C6 --> U1b --> B
+
+    %% Emissão de sessão (concorrência)
+    D2 -- "[credenciaisValidas == true]" --> F1
+    F1 --> C7 --> J1
+    F1 --> C8 --> J1
+    F1 --> C9 --> J1
+    J1 --> C10 --> U2 --> C11 --> D4
+
+    %% Autorização
+    D4 -- "[tokenExpiradoOuRevogado == true]" --> C15 --> U5 --> B
+    D4 -- "[tokenExpiradoOuRevogado == false]" --> D5
+    D5 -- "[perfilAutorizado == true]" --> D6
+    D6 -- "[tokenProximoDoFim == true]" --> C16 --> C12
+    D6 -- "[tokenProximoDoFim == false]" --> C12
+    C12 --> U3 --> D7
+    D5 -- "[perfilAutorizado == false]" --> C13 --> C14 --> U4 --> FIM4
+
+    %% Uso contínuo e encerramento
+    D7 -- "[continuarUsando == true]" --> U2
+    D7 -- "[continuarUsando == false]" --> U6 --> C17 --> FIM3
