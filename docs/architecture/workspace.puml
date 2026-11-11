@@ -1,0 +1,81 @@
+' =====================================================================
+' FabLab Manager - Componente Controle de Acesso (RF24)
+' Modelo C4 as-Code (C4-PlantUML, biblioteca padrão <C4/...>)
+'   Diagrama 1: Visão de Contêineres (C4 Nível 2)
+'   Diagrama 2: Visão de Componentes (C4 Nível 3) - Controle de Acesso
+' Renderizar: java -jar plantuml.jar -tsvg workspace.puml
+' =====================================================================
+
+@startuml c4-containers
+!include <C4/C4_Container>
+
+title Contêineres - FabLab Manager (foco no Controle de Acesso)
+
+Person(solic, "Solicitante", "Usuário acadêmico ou de projeto industrial que reserva máquinas")
+Person(adm, "Administrador/Técnico", "Aprova reservas, gerencia máquinas, estoque e compras")
+
+System_Boundary(fab, "FabLab Manager") {
+    Container(spa, "Portal Web FabLab", "React 18 + TypeScript", "SPA: login, reservas, estoque e compras. Guarda o JWT em memória")
+    Container(api, "API FabLab Manager", "Node.js 20 + NestJS (TypeScript)", "Regras de negócio: Reservas, Fila, Máquinas, Estoque, Compras e Controle de Acesso")
+    Container(worker, "Worker de Notificações", "Node.js 20 (amqplib)", "Consome eventos e aciona o Serviço de Notificação")
+    ContainerQueue(mq, "Broker de Eventos", "RabbitMQ 3.13", "Fila notificacoes.seguranca (eventos de segurança e negócio)")
+    ContainerDb(db, "Banco de Dados FabLab", "PostgreSQL 16", "Perfis, permissões, bloqueios, sessões revogadas e auditoria")
+}
+
+System_Ext(login, "Sistema de Login", "Provedor institucional de identidade (valida credenciais)")
+System_Ext(notif, "Serviço de Notificação", "Envio de e-mail/push aos envolvidos")
+System_Ext(fin, "Sistema Financeiro", "Aprova ou recusa solicitações de compra (perfil FINANCEIRO)")
+System_Ext(forn, "Portal do Fornecedor", "Recebe pedidos aprovados e confirma entregas (perfil FORNECEDOR)")
+
+Rel(solic, spa, "Usa", "HTTPS")
+Rel(adm, spa, "Usa", "HTTPS")
+Rel(spa, api, "Autentica e consome funcionalidades", "REST/JSON sobre HTTPS (TLS 1.3), Bearer JWT")
+Rel(fin, api, "Responde solicitações de compra", "REST/JSON sobre HTTPS (TLS 1.3), Bearer JWT")
+Rel(forn, api, "Confirma entregas", "REST/JSON sobre HTTPS (TLS 1.3), Bearer JWT")
+Rel(api, login, "Valida credenciais", "REST/JSON sobre HTTPS (TLS 1.3)")
+Rel(api, db, "Lê e grava", "SQL - protocolo PostgreSQL, TCP 5432 com TLS")
+Rel(api, mq, "Publica eventos (assíncrono)", "AMQP 0-9-1 sobre TLS, porta 5671")
+Rel(mq, worker, "Entrega eventos", "AMQP 0-9-1 sobre TLS, porta 5671")
+Rel(worker, notif, "Envia notificações", "REST/JSON sobre HTTPS")
+
+SHOW_LEGEND()
+@enduml
+
+@startuml c4-componentes
+!include <C4/C4_Component>
+
+title Componentes - API FabLab Manager: Controle de Acesso (RF24)
+
+Container(spa, "Portal Web FabLab", "React 18 + TypeScript", "SPA do FabLab")
+ContainerDb(db, "Banco de Dados FabLab", "PostgreSQL 16", "Perfis, permissões, bloqueios, sessões revogadas, auditoria")
+ContainerQueue(mq, "Broker de Eventos", "RabbitMQ 3.13", "Fila notificacoes.seguranca")
+System_Ext(login, "Sistema de Login", "Provedor institucional de identidade")
+System_Ext(fin, "Sistema Financeiro", "Perfil FINANCEIRO")
+System_Ext(forn, "Portal do Fornecedor", "Perfil FORNECEDOR")
+
+Container_Boundary(api,"API FabLab Manager (Node.js 20 + NestJS)") {
+    Component(authctl, "AuthController", "NestJS Controller (REST)", "POST /auth/login, POST /auth/logout. Converte HTTP em chamadas a IAutenticacao")
+    Component(guard, "PermissaoGuard", "NestJS Guard + decorator @Permissao", "Intercepta as rotas dos módulos de negócio, extrai o Bearer JWT e chama verificarPermissao")
+    Component(modulos, "Módulos de Negócio", "NestJS Modules", "Reservas, Fila de Prioridade, Máquinas, Estoque e Compras")
+    Component(acesso, "ControleAcessoService", "TypeScript Service (implementa IAutenticacao)", "autenticar, verificarPermissao, renovarSessao e encerrarSessao. Emite e valida JWT RS256 de 15 min (jsonwebtoken)")
+    Component(loginc, "LoginClient", "Adapter HTTP (axios) - implementa ILoginExterno", "validarCredenciais(CredenciaisDTO) com timeout e retry limitado")
+    Component(repo, "RepositorioAcesso", "Repository (Prisma ORM) - implementa IRepositorioAcesso", "Bloqueios, perfis, matriz perfil x funcionalidade, sessões revogadas e auditoria")
+    Component(pub, "PublicadorEventos", "Adapter AMQP (amqplib) - implementa INotificacao", "notificar(destinatario, EventoSegurancaDTO) sem bloquear a requisição")
+}
+
+Rel(spa, authctl, "Autentica e encerra sessão", "REST/JSON sobre HTTPS (TLS 1.3)")
+Rel(spa, modulos, "Requisições funcionais com Bearer JWT", "REST/JSON sobre HTTPS (TLS 1.3)")
+Rel(fin, modulos, "Requisições funcionais com Bearer JWT", "REST/JSON sobre HTTPS (TLS 1.3)")
+Rel(forn, modulos, "Requisições funcionais com Bearer JWT", "REST/JSON sobre HTTPS (TLS 1.3)")
+Rel(modulos, guard, "Rotas protegidas por", "in-process (decorator @Permissao)")
+Rel(authctl, acesso, "autenticar / encerrarSessao", "in-process (IAutenticacao)")
+Rel(guard, acesso, "verificarPermissao(SessaoDTO, funcionalidade)", "in-process (IAutenticacao)")
+Rel(acesso, loginc, "validarCredenciais(CredenciaisDTO)", "in-process (ILoginExterno)")
+Rel(acesso, repo, "consultarBloqueio, consultarPermissao, sessaoRevogada...", "in-process (IRepositorioAcesso)")
+Rel(acesso, pub, "notificar(...) - assíncrono", "in-process (INotificacao)")
+Rel(loginc, login, "POST /validar-credenciais", "REST/JSON sobre HTTPS (TLS 1.3)")
+Rel(repo, db, "Lê e grava", "SQL - protocolo PostgreSQL, TCP 5432 com TLS")
+Rel(pub, mq, "Publica evento", "AMQP 0-9-1 sobre TLS, porta 5671")
+
+SHOW_LEGEND()
+@enduml
