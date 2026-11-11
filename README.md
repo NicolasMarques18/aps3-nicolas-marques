@@ -392,17 +392,11 @@ stateDiagram-v2
 
 ## 6. Artefato 4 — Visão Arquitetural C4
 
-Código-fonte: [`docs/architecture/workspace.puml`](docs/architecture/workspace.puml) (C4-PlantUML, com dois diagramas: Contêineres e Componentes).
+Código-fonte: [`docs/architecture/workspace.puml`](docs/architecture/workspace.puml) (C4-PlantUML: Visão de Contêineres).
 
-Tecnologias: React 18, Node.js 20 + NestJS, PostgreSQL 16, RabbitMQ 3.13. Protocolos explícitos nos conectores: REST/JSON sobre HTTPS (TLS 1.3), SQL sobre TCP 5432 com TLS, AMQP 0-9-1 sobre TLS e chamadas in-process.
-
-### 6.1 Nível 2 — Contêineres
+Tecnologias: React 18, Node.js 20 + NestJS, PostgreSQL 16, RabbitMQ 3.13. Protocolos explícitos nos conectores: REST/JSON sobre HTTPS (TLS 1.3), SQL sobre TCP 5432 com TLS e AMQP 0-9-1 sobre TLS.
 
 ![C4 Nível 2 — Contêineres](assets/c4-containers.png)
-
-### 6.2 Nível 3 — Componentes (Controle de Acesso)
-
-![C4 Nível 3 — Componentes](assets/c4-componentes.png)
 
 ---
 
@@ -442,7 +436,7 @@ Tecnologias: React 18, Node.js 20 + NestJS, PostgreSQL 16, RabbitMQ 3.13. Protoc
 aps3-nome-sobrenome/
 ├── docs/
 │   ├── architecture/
-│   │   ├── workspace.puml     <-- C4 (PlantUML): Contêineres e Componentes
+│   │   ├── workspace.puml     <-- C4 (PlantUML): Contêineres
 │   │   └── adr-0001.md        <-- Registro de Decisão Arquitetural
 │   └── diagrams/
 │       ├── sequencia.mmd      <-- Diagrama de Sequência
@@ -452,15 +446,14 @@ aps3-nome-sobrenome/
 │   ├── sequencia.png
 │   ├── atividades.png
 │   ├── estados.png
-│   ├── c4-containers.png
-│   └── c4-componentes.png
+│   └── c4-containers.png
 └── README.md
 ```
 
 **Como regenerar as imagens**
 
 - Mermaid: `npx @mermaid-js/mermaid-cli -i docs/diagrams/sequencia.mmd -o assets/sequencia.png` (idem para `atividades` e `estados`).
-- C4-PlantUML: `java -jar plantuml.jar -tpng -o ../../assets docs/architecture/workspace.puml` (executado de dentro de `docs/architecture/`).
+- C4-PlantUML: `java -jar plantuml.jar -tpng -o ../../assets docs/architecture/workspace.puml` (executado de dentro de docs/architecture/ gerando a visão de contêineres).
 
 ---
 
